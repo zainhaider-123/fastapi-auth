@@ -7,14 +7,15 @@ from pwdlib import PasswordHash
 from ..settings import Settings
 
 settings = Settings()
+password_hash = PasswordHash.recommended()
 
 
 def hash_password(password: str) -> str:
-    return PasswordHash(password).recommended()
+    return password_hash.hash(password)
 
 
-def verify_password(password: str, hash: str) -> bool:
-    return PasswordHash(hash).verify(password)
+def verify_password(password: str, hashed_password: str) -> bool:
+    return password_hash.verify(password, hashed_password)
 
 
 def generate_access_token(user_id: int) -> str:
