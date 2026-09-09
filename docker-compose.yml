@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17
+    container_name: postgres_db
+    restart: unless-stopped
+
+    ports:
+      - "5432:5432"
+
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: root
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+    # DATABASE_URL=postgresql://root:root@localhost:5432/postgres
