@@ -3,8 +3,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 from fastapi import HTTPException
 from pwdlib import PasswordHash
-
-from ..settings import Settings
+from settings import Settings
 
 settings = Settings()
 password_hash = PasswordHash.recommended()

@@ -1,10 +1,21 @@
+from contextlib import asynccontextmanager
+
 import uvicorn
 from auth.routes import router as auth_router
 from database.client import Base, engine
+from database.model.user import UserModel  # noqa: F401 — register model metadata
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,9 +39,6 @@ def health_check():
 
 # Register routers
 app.include_router(api)
-
-
-Base.metadata.create_all(bind=engine)
 
 
 def main() -> None:

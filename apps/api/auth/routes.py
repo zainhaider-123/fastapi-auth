@@ -1,28 +1,27 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..database import get_db
-from ..database.model import UserModel
-from ..settings import Settings
-from .schema import (
+from auth.schema import (
     LoginRequest,
     LoginResponse,
     LogoutResponse,
-    RefreshTokenRequest,
     RefreshTokenResponse,
     RegisterRequest,
     RegisterResponse,
     UserResponse,
 )
-from .utils import (
+from auth.utils import (
     generate_access_token,
     generate_refresh_token,
     hash_password,
     verify_password,
     verify_refresh_token,
 )
+from database.client import get_db
+from database.model.user import UserModel
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from settings import Settings
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 settings = Settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -33,24 +32,24 @@ db_session = Annotated[AsyncSession, Depends(get_db)]
 @router.post("/register", response_model=RegisterResponse, status_code=201)
 async def register(data: RegisterRequest, db: db_session):
     existing_user_email = (
-        await db.query(UserModel).filter(UserModel.email == data.email).first()
-    )
+        await db.execute(select(UserModel).where(UserModel.email == data.email))
+    ).scalar_one_or_none()
     existing_user_username = (
-        await db.query(UserModel).filter(UserModel.username == data.username).first()
-    )
+        await db.execute(select(UserModel).where(UserModel.username == data.username))
+    ).scalar_one_or_none()
     if existing_user_email or existing_user_username:
         raise HTTPException(status_code=400, detail="User already exists")
     if data.password != data.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
-    hashed_password = await hash_password(data.password)
+    hashed_password = hash_password(data.password)
     new_user = UserModel(
         name=data.name,
         email=data.email,
         username=data.username,
         password=hashed_password,
     )
-    await db.add(new_user)
+    db.add(new_user)
     await db.commit()
     await db.refresh(new_user)
     return RegisterResponse(
@@ -60,22 +59,24 @@ async def register(data: RegisterRequest, db: db_session):
 
 @router.post("/login", response_model=LoginResponse, status_code=200)
 async def login(data: LoginRequest, response: Response, db: db_session):
-    user = await db.query(UserModel).filter(UserModel.email == data.email).first()
+    user = (
+        await db.execute(select(UserModel).where(UserModel.email == data.email))
+    ).scalar_one_or_none()
 
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    if not await verify_password(data.password, user.password):
+    if not verify_password(data.password, user.password):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    access_token = await generate_access_token(user.id)
-    refresh_token = await generate_refresh_token(user.id)
+    access_token = generate_access_token(user.id)
+    refresh_token = generate_refresh_token(user.id)
 
     response.set_cookie(
         key="access_token",
         value=access_token,
-        httponly=True,
-        secure=True,
+        # httponly=True,
+        # secure=True,
         samesite="lax",
         max_age=settings.access_token_expires_in,
     )
@@ -83,8 +84,8 @@ async def login(data: LoginRequest, response: Response, db: db_session):
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
-        httponly=True,
-        secure=True,
+        # httponly=True,
+        # secure=True,
         samesite="lax",
         max_age=settings.refresh_token_expires_in,
         path="/api/v1/auth/refresh",
@@ -112,9 +113,11 @@ async def refresh(
             detail="Refresh token is required",
         )
 
-    user_id = await verify_refresh_token(refresh_token)
+    user_id = verify_refresh_token(refresh_token)
 
-    user = await db.query(UserModel).filter(UserModel.id == user_id).first()
+    user = (
+        await db.execute(select(UserModel).where(UserModel.id == user_id))
+    ).scalar_one_or_none()
 
     if not user:
         raise HTTPException(
@@ -122,7 +125,7 @@ async def refresh(
             detail="User not found",
         )
 
-    access_token = await generate_access_token(user.id)
+    access_token = generate_access_token(user.id)
 
     response.set_cookie(
         key="access_token",
